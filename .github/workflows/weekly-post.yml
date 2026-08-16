@@ -64,6 +64,20 @@ jobs:
             python src/main.py render
           fi
 
+      # 릴스·쇼츠용 세로 영상도 같이 만들어 둡니다.
+      # 실행 결과 화면 맨 아래 Artifacts 에서 mp4 를 내려받아
+      # 인스타 릴스 / 유튜브 쇼츠에 직접 올리시면 됩니다. (음악은 앱에서 얹으세요)
+      # ※ 게시 단계보다 앞에 두어야 이번 주 회차의 영상이 만들어집니다.
+      - name: 릴스·쇼츠용 영상 생성
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y -qq ffmpeg
+          if [ -n "${{ inputs.week }}" ]; then
+            python src/main.py video --week ${{ inputs.week }}
+          else
+            python src/main.py video
+          fi
+
       - name: 이미지 커밋 (인스타가 읽어갈 공개 URL 확보)
         run: |
           git config user.name  "cardnews-bot"
@@ -95,6 +109,15 @@ jobs:
           git diff --staged --quiet || git commit -m "state: 회차 진행 기록"
           git pull --rebase --autostash || true
           git push
+
+      - name: 릴스 영상 첨부
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reels-video
+          path: insta-cardnews/output/video/*.mp4
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: 이번 회차 카드 미리보기 첨부
         if: always()
