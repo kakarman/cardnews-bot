@@ -66,6 +66,17 @@ jobs:
             echo 'CARDNEWS_EOF'
           } >> "$GITHUB_ENV"
 
+      # 구글 앱 비밀번호를 복사하면 'abcd efgh ijkl mnop' 사이에
+      # 일반 공백이 아닌 U+00A0(줄바꿈 없는 공백)이 딸려옵니다.
+      # 눈에 보이지 않아 붙여넣을 때 알아채기 어렵고, SMTP 로그인이 실패합니다.
+      - name: 앱 비밀번호 정리
+        env:
+          RAW_PW: ${{ secrets.MAIL_PASSWORD }}
+        run: |
+          CLEAN=$(python3 -c "import os,re;print(re.sub(r'[\s ​-‍⁠﻿]+','',os.environ['RAW_PW']))")
+          echo "::add-mask::$CLEAN"
+          echo "MAIL_PW=$CLEAN" >> "$GITHUB_ENV"
+
       - name: 메일 보내기
         uses: dawidd6/action-send-mail@v3
         with:
@@ -73,7 +84,7 @@ jobs:
           server_port: 465
           secure: true
           username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
+          password: ${{ env.MAIL_PW }}
           from: 카드뉴스 봇 <${{ secrets.MAIL_USERNAME }}>
           to: ${{ secrets.MAIL_TO }}
           subject: "💼 오늘 링크드인 — ${{ steps.pack.outputs.week }}회차 「${{ steps.pack.outputs.chapter }}」"
