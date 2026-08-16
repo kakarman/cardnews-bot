@@ -1,0 +1,35 @@
+name: 메일 설정 진단
+
+# Gmail 앱 비밀번호가 실제로 동작하는지 GitHub 에서 바로 확인합니다.
+# 내 PC에 파이썬이 없어도 됩니다. Actions 탭에서 수동으로 실행하세요.
+#
+# 비밀번호 값 자체는 절대 출력하지 않고,
+# 길이·공백 여부·문자 구성만 보여줍니다.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: insta-cardnews
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 메일 설정 진단
+        env:
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: python tools/test_mail.py
