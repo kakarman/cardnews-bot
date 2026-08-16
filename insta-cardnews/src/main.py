@@ -257,6 +257,162 @@ def cmd_post(args):
     log.info("다음 회차 인덱스: %d", state["next_index"])
 
 
+def last_posted_week(state: dict, posts: list) -> int:
+    """가장 최근에 인스타에 올라간 회차 번호. 기록이 없으면 다음 예정 회차."""
+    hist = state.get("history", [])
+    if hist:
+        return hist[-1]["week"]
+    idx = state.get("next_index", 0) % len(posts)
+    return posts[idx]["week"]
+
+
+def build_reels_texts(post: dict, book: dict) -> dict:
+    cfg = book["reels"]
+    tags = (book["base_hashtags"] + post.get("hashtags", []))[: cfg.get("max_hashtags", 8)]
+    tag_str = " ".join(tags)
+    return {
+        "caption": cfg["caption_template"].format(
+            hook=post["hook"], summary=post["summary"], hashtags=tag_str),
+        "shorts_title": cfg["shorts_title"].format(hook=post["hook"]),
+        "shorts_description": cfg["shorts_description"].format(
+            summary=post["summary"], buy_url=book["buy_url"], hashtags=tag_str),
+    }
+
+
+def build_linkedin_texts(post: dict, book: dict) -> dict:
+    with open(os.path.join(CONTENT, "linkedin.json"), encoding="utf-8") as f:
+        cfg = json.load(f)
+    q = cfg["questions"].get(str(post["week"]), "")
+    tags = " ".join(cfg["hashtags"] + post.get("hashtags", [])[:2])
+
+    short = [post["hook"], "", post["summary"], ""]
+    if q:
+        short += [q, ""]
+    short += [cfg["cta"], "", tags]
+
+    full = [post["hook"], "", post["summary"], ""]
+    for slide in post["slides"][: cfg.get("max_body_slides", 3)]:
+        full.append(f"▸ {slide['title']}")
+        full.append(" ".join(slide["body"]))
+        full.append("")
+    if q:
+        full += [q, ""]
+    full += [cfg["cta"], "", tags]
+
+    return {
+        "short": "\n".join(short),
+        "full": "\n".join(full),
+        "first_comment": cfg["first_comment"].format(buy_url=book["buy_url"]),
+    }
+
+
+def cmd_pack(args):
+    """메일로 보낼 꾸러미(영상/PDF + 복붙용 문구)를 만든다."""
+    book, posts = load()
+    state = load_state()
+
+    week = args.week or last_posted_week(state, posts)
+    post = next(p for p in posts if p["week"] == week)
+    outdir = os.path.join(ROOT, "output", "email")
+    os.makedirs(outdir, exist_ok=True)
+
+    def w(name: str, text: str) -> str:
+        p = os.path.join(outdir, name)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(text)
+        return p
+
+    if args.kind == "reels":
+        import video
+        cards = render.render_post(
+            post, book, os.path.join(CARDS_DIR, f"w{week:02d}"))
+        mp4 = os.path.join(outdir, f"w{week:02d}_reels.mp4")
+        video.build(cards, mp4)
+
+        t = build_reels_texts(post, book)
+        w(f"w{week:02d}_릴스_문구.txt",
+          f"[인스타 릴스 캡션]\n\n{t['caption']}\n\n\n"
+          f"[유튜브 쇼츠 제목]\n\n{t['shorts_title']}\n\n\n"
+          f"[유튜브 쇼츠 설명]\n\n{t['shorts_description']}\n")
+
+        body = "\n".join([
+            f"{week}회차 「{post['chapter']}」 인스타 게시가 끝났습니다.",
+            "",
+            "릴스는 본 게시물과 시차가 적을수록 좋으니 오늘 안에 올려주세요.",
+            "첨부한 mp4를 올리면서 앱에서 유행하는 음악을 얹으면 도달이 훨씬 좋아집니다.",
+            "",
+            "─────────────────────",
+            "■ 인스타 릴스 캡션 (복붙)",
+            "─────────────────────",
+            "",
+            t["caption"],
+            "",
+            "─────────────────────",
+            "■ 유튜브 쇼츠 제목",
+            "─────────────────────",
+            "",
+            t["shorts_title"],
+            "",
+            "─────────────────────",
+            "■ 유튜브 쇼츠 설명",
+            "─────────────────────",
+            "",
+            t["shorts_description"],
+            "",
+            "─────────────────────",
+            "첨부: 릴스·쇼츠용 세로 영상(mp4, 무음), 같은 내용의 문구 파일",
+        ])
+        w("body_reels.txt", body)
+        log.info("\n릴스 꾸러미 준비 완료 (%d회차) → %s", week, outdir)
+
+    else:  # linkedin
+        import carousel_pdf
+        cards = render.render_post(
+            post, book,
+            os.path.join(ROOT, "output", "linkedin_cards", f"w{week:02d}"),
+            cta_variant="linkedin")
+        pdf = os.path.join(outdir, f"w{week:02d}_linkedin.pdf")
+        carousel_pdf.build(cards, pdf,
+                           title=f"{book['title']} — {post['chapter']}",
+                           author=book["author"])
+
+        t = build_linkedin_texts(post, book)
+        w(f"w{week:02d}_링크드인_본문.txt",
+          f"[A. PDF와 함께 올릴 짧은 본문 — 권장]\n\n{t['short']}\n\n\n"
+          f"[B. 표지 1장과 올릴 전체 본문]\n\n{t['full']}\n\n\n"
+          f"[게시 직후 직접 달 첫 댓글]\n\n{t['first_comment']}\n")
+
+        body = "\n".join([
+            f"오늘 링크드인에 올릴 {week}회차 「{post['chapter']}」 입니다.",
+            "",
+            "1. 링크드인 글쓰기 → 첨부 아이콘 → '문서 추가' 로 첨부 PDF 업로드",
+            "2. 아래 본문을 복사해 붙여넣기",
+            "3. 게시 직후 맨 아래 '첫 댓글'을 직접 댓글로 등록",
+            "   (본문에 외부 링크를 넣으면 링크드인이 도달을 줄입니다)",
+            "",
+            "─────────────────────",
+            "■ 본문 (복붙)",
+            "─────────────────────",
+            "",
+            t["short"],
+            "",
+            "─────────────────────",
+            "■ 게시 직후 달 첫 댓글",
+            "─────────────────────",
+            "",
+            t["first_comment"],
+            "",
+            "─────────────────────",
+            "첨부: 카드 7장 PDF(캐러셀용), 같은 내용의 문구 파일",
+            "PDF 마지막 장은 '첫 번째 댓글에 링크를 남겼습니다' 로 되어 있습니다.",
+        ])
+        w("body_linkedin.txt", body)
+        log.info("\n링크드인 꾸러미 준비 완료 (%d회차) → %s", week, outdir)
+
+    _emit("week", week)
+    _emit("chapter", post["chapter"])
+
+
 def cmd_linkedin(args):
     """링크드인 수동 게시용 원고 24편을 마크다운 한 파일로 만든다."""
     book, posts = load()
@@ -268,16 +424,29 @@ def cmd_linkedin(args):
         "",
         "주 1회, 화요일이나 수요일 **오전 8~10시**에 올리는 것을 권합니다.",
         "",
-        "**게시 방법**",
+        "## 두 가지 방식 중 고르세요",
         "",
-        "1. 아래 「본문」을 그대로 복사해 링크드인 글쓰기에 붙여넣기",
-        "2. 게시 후 **바로 「첫 댓글」을 직접 댓글로 등록**",
+        "| | A. 카드 PDF + 짧은 글 (권장) | B. 긴 글 + 표지 1장 |",
+        "|---|---|---|",
+        "| 첨부 | `wNN_linkedin.pdf` (7쪽 캐러셀) | `wNN_01_cover.png` 1장 |",
+        "| 본문 | 짧은 버전 | 전체 버전 |",
+        "| 특징 | 넘겨보는 만큼 체류 시간이 길어 도달이 좋음 | 검색·복사에 유리 |",
+        "",
+        "**A가 유리한 이유**: 링크드인은 PDF를 올리면 좌우로 넘기는 캐러셀로 보여줍니다.",
+        "카드가 내용을 대신하므로 본문은 짧게 두는 편이 읽힙니다.",
+        "PDF는 `output/pdf/` 에 있거나, Actions 실행 결과의 Artifacts 에서 내려받을 수 있습니다.",
+        "",
+        "## 게시 순서",
+        "",
+        "1. 링크드인 글쓰기 → 첨부 아이콘 → **문서 추가** 로 PDF 업로드 (A 방식)",
+        "2. 아래 본문을 복사해 붙여넣기",
+        "3. 게시 후 **바로 「첫 댓글」을 직접 댓글로 등록**",
         "   (본문에 외부 링크를 넣으면 링크드인이 도달을 줄입니다)",
-        "3. 댓글이 달리면 되도록 답글을 남기세요. 추가 노출로 이어집니다.",
+        "4. 댓글이 달리면 되도록 답글을 남기세요. 추가 노출로 이어집니다.",
         "",
         "---",
         "",
-        f"## 첫 댓글 (24편 공통)",
+        "## 첫 댓글 (24편 공통)",
         "",
         "```",
         cfg["first_comment"].format(buy_url=book["buy_url"]),
@@ -289,25 +458,42 @@ def cmd_linkedin(args):
 
     for post in posts:
         q = cfg["questions"].get(str(post["week"]), "")
-        body = [post["hook"], "", post["summary"], ""]
-        for slide in post["slides"][: cfg.get("max_body_slides", 3)]:
-            body.append(f"▸ {slide['title']}")
-            body.append(" ".join(slide["body"]))
-            body.append("")
-        if q:
-            body += [q, ""]
-        body.append(cfg["cta"])
-        body.append("")
-        body.append(" ".join(cfg["hashtags"] + post.get("hashtags", [])[:2]))
+        tags = " ".join(cfg["hashtags"] + post.get("hashtags", [])[:2])
 
-        text = "\n".join(body)
+        # A. 캐러셀용 짧은 본문 (카드가 내용을 대신함)
+        short = [post["hook"], "", post["summary"], ""]
+        if q:
+            short += [q, ""]
+        short += [cfg["cta"], "", tags]
+        short_text = "\n".join(short)
+
+        # B. 전체 본문
+        full = [post["hook"], "", post["summary"], ""]
+        for slide in post["slides"][: cfg.get("max_body_slides", 3)]:
+            full.append(f"▸ {slide['title']}")
+            full.append(" ".join(slide["body"]))
+            full.append("")
+        if q:
+            full += [q, ""]
+        full += [cfg["cta"], "", tags]
+        full_text = "\n".join(full)
+
         out += [
             f"## {post['week']}회차 — {post['chapter']}",
             "",
-            f"*{len(text)}자 · 첫 줄이 후킹입니다*",
+            f"**첨부**: `w{post['week']:02d}_linkedin.pdf` (A) 또는 "
+            f"`w{post['week']:02d}_01_cover.png` (B)",
+            "",
+            f"### A. 카드 PDF와 함께 — 짧은 본문 ({len(short_text)}자)",
             "",
             "```",
-            text,
+            short_text,
+            "```",
+            "",
+            f"### B. 표지 1장과 함께 — 전체 본문 ({len(full_text)}자)",
+            "",
+            "```",
+            full_text,
             "```",
             "",
             "---",
@@ -340,6 +526,33 @@ def cmd_video(args):
 
     log.info("\n%d개 영상을 %s 에 저장했습니다.", len(made), outdir)
     log.info("업로드할 때 앱에서 유행하는 음악을 직접 얹으면 도달이 훨씬 좋아집니다.")
+
+
+def cmd_pdf(args):
+    """링크드인 문서 캐러셀용 PDF 생성."""
+    import carousel_pdf
+
+    book, posts = load()
+    state = load_state()
+    targets = posts if args.all else [pick_post(posts, state, args.week)]
+
+    outdir = os.path.join(ROOT, "output", "pdf")
+    for post in targets:
+        # 링크드인용은 마지막 장을 '첫 댓글에 링크' 문구로 바꿔 따로 렌더링합니다.
+        cards = render.render_post(
+            post, book,
+            os.path.join(ROOT, "output", "linkedin_cards", f"w{post['week']:02d}"),
+            cta_variant="linkedin")
+        out = os.path.join(outdir, f"w{post['week']:02d}_linkedin.pdf")
+        carousel_pdf.build(
+            cards, out,
+            title=f"{book['title']} — {post['chapter']}",
+            author=book["author"],
+        )
+        log.info("  WEEK %02d · %s", post["week"], post["chapter"])
+
+    log.info("\nPDF를 %s 에 저장했습니다.", outdir)
+    log.info("링크드인 글쓰기 → 첨부 아이콘 → '문서 추가' 로 올리면 캐러셀이 됩니다.")
 
 
 def cmd_threads(args):
@@ -417,10 +630,20 @@ def main():
     li = sub.add_parser("linkedin", help="링크드인 게시용 원고 24편 생성")
     li.set_defaults(func=cmd_linkedin)
 
+    pk = sub.add_parser("pack", help="메일로 보낼 꾸러미(영상/PDF + 문구) 준비")
+    pk.add_argument("--kind", choices=["reels", "linkedin"], required=True)
+    pk.add_argument("--week", type=int)
+    pk.set_defaults(func=cmd_pack)
+
     v = sub.add_parser("video", help="릴스·쇼츠용 세로 영상(mp4) 생성")
     v.add_argument("--week", type=int)
     v.add_argument("--all", action="store_true")
     v.set_defaults(func=cmd_video)
+
+    pf = sub.add_parser("pdf", help="링크드인 문서 캐러셀용 PDF 생성")
+    pf.add_argument("--week", type=int)
+    pf.add_argument("--all", action="store_true")
+    pf.set_defaults(func=cmd_pdf)
 
     t = sub.add_parser("threads", help="스레드에 3연속 포스트로 게시")
     t.add_argument("--week", type=int)

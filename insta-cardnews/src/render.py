@@ -185,8 +185,11 @@ def card_body(post: dict, book: dict, idx: int) -> Image.Image:
     return img
 
 
-def card_cta(post: dict, book: dict) -> Image.Image:
-    cta = book["cta"]
+def card_cta(post: dict, book: dict, variant: str = "default") -> Image.Image:
+    # 채널마다 마지막 장의 안내 문구가 달라야 합니다.
+    #   인스타 → "프로필 링크에서 만나보세요"
+    #   링크드인 → "첫 번째 댓글에 링크를 남겼습니다"
+    cta = book.get(f"cta_{variant}", book["cta"]) if variant != "default" else book["cta"]
     img = Image.new("RGB", (T.WIDTH, T.HEIGHT), T.BG_COVER)
     d = ImageDraw.Draw(img)
     inner = T.WIDTH - T.MARGIN * 2
@@ -230,14 +233,19 @@ def card_cta(post: dict, book: dict) -> Image.Image:
 
 
 # ── 진입점 ──────────────────────────────────────────────
-def render_post(post: dict, book: dict, outdir: str) -> list[str]:
-    """한 편(7장)을 PNG로 저장하고 경로 리스트를 순서대로 반환."""
+def render_post(post: dict, book: dict, outdir: str,
+                cta_variant: str = "default") -> list[str]:
+    """한 편(7장)을 PNG로 저장하고 경로 리스트를 순서대로 반환.
+
+    cta_variant 로 마지막 CTA 장의 안내 문구를 채널에 맞게 바꿉니다.
+    """
     os.makedirs(outdir, exist_ok=True)
     paths = []
     cards = [("01_cover", card_cover(post, book))]
     for i in range(len(post["slides"])):
         cards.append((f"{i + 2:02d}_body{i + 1}", card_body(post, book, i)))
-    cards.append((f"{len(post['slides']) + 2:02d}_cta", card_cta(post, book)))
+    cards.append((f"{len(post['slides']) + 2:02d}_cta",
+                  card_cta(post, book, cta_variant)))
 
     for name, im in cards:
         p = os.path.join(outdir, f"w{post['week']:02d}_{name}.png")
