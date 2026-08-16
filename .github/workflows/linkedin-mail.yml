@@ -1,0 +1,88 @@
+name: 링크드인 원고 메일 발송
+
+# 링크드인에 올릴 날 아침, 그 주 회차의 PDF와 본문을 메일로 보냅니다.
+# 게시 자체는 직접 하셔야 합니다 (링크드인 API는 승인 절차가 필요해서 수동이 빠릅니다).
+
+on:
+  schedule:
+    # 매주 수요일 07:00 (한국시간) = 화요일 22:00 UTC
+    # 화요일 밤 인스타 게시가 끝난 뒤라, 같은 회차 내용이 담깁니다.
+    - cron: "0 22 * * 2"
+
+  workflow_dispatch:
+    inputs:
+      week:
+        description: "특정 회차 번호 (비워두면 최근 인스타 게시분)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# ⚠️ 코드가 insta-cardnews/ 폴더 안에 있는 구조 기준입니다.
+defaults:
+  run:
+    working-directory: insta-cardnews
+
+jobs:
+  mail:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 한글 폰트 설치
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: insta-cardnews/requirements.txt
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 링크드인 꾸러미 준비
+        id: pack
+        run: |
+          if [ -n "${{ inputs.week }}" ]; then
+            python src/main.py pack --kind linkedin --week ${{ inputs.week }}
+          else
+            python src/main.py pack --kind linkedin
+          fi
+
+      - name: 메일 본문 읽기
+        run: |
+          {
+            echo 'MAIL_BODY<<CARDNEWS_EOF'
+            cat output/email/body_linkedin.txt
+            echo CARDNEWS_EOF
+          } >> "$GITHUB_ENV"
+
+      - name: 메일 보내기
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          from: 카드뉴스 봇 <${{ secrets.MAIL_USERNAME }}>
+          to: ${{ secrets.MAIL_TO }}
+          subject: "💼 오늘 링크드인 — ${{ steps.pack.outputs.week }}회차 「${{ steps.pack.outputs.chapter }}」"
+          body: ${{ env.MAIL_BODY }}
+          attachments: >-
+            insta-cardnews/output/email/*.pdf,
+            insta-cardnews/output/email/*링크드인_본문.txt
+
+      - name: 실패 대비 첨부
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linkedin-pack
+          path: insta-cardnews/output/email/*
+          if-no-files-found: ignore
+          retention-days: 30
