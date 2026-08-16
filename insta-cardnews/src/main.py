@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import logging
 import os
@@ -48,11 +49,41 @@ def load():
     return book, posts
 
 
+DEFAULT_STATE = {"next_index": 0, "loop": True, "token_issued_at": "", "history": []}
+
+
 def load_state() -> dict:
-    if os.path.exists(STATE_PATH):
-        with open(STATE_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    return {"next_index": 0, "loop": True, "history": []}
+    if not os.path.exists(STATE_PATH):
+        return dict(DEFAULT_STATE)
+
+    with open(STATE_PATH, encoding="utf-8") as f:
+        raw = f.read()
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        # 손으로 고치다 쉼표를 빠뜨리는 경우가 가장 흔합니다.
+        # 어느 줄이 문제인지 그대로 보여줘야 바로 고칠 수 있습니다.
+        lines = raw.splitlines()
+        lo, hi = max(0, e.lineno - 3), min(len(lines), e.lineno + 2)
+        snippet = "\n".join(
+            f"  {'▶' if i + 1 == e.lineno else ' '} {i + 1:2d} | {lines[i]}"
+            for i in range(lo, hi)
+        )
+        raise SystemExit(
+            f"\n❌ state.json 을 읽을 수 없습니다 (JSON 문법 오류)\n"
+            f"   {e.msg} — {e.lineno}번째 줄 {e.colno}번째 칸\n\n"
+            f"{snippet}\n\n"
+            f"   가장 흔한 원인은 ▶ 표시된 줄의 '바로 윗줄' 끝에 쉼표(,)가 빠진 것입니다.\n"
+            f"   JSON은 마지막 항목을 뺀 모든 줄 끝에 쉼표가 있어야 합니다.\n\n"
+            f"   올바른 예:\n"
+            f'     {{\n'
+            f'       "next_index": 1,\n'
+            f'       "loop": true,\n'
+            f'       "token_issued_at": "2026-08-16",   ← 쉼표 필요\n'
+            f'       "history": []\n'
+            f'     }}\n'
+        )
 
 
 def save_state(state: dict) -> None:
@@ -654,12 +685,19 @@ def main():
     try:
         args.func(args)
     except Exception as e:  # 스택 트레이스 대신 읽을 수 있는 메시지로
-        from instagram import InstagramError
-        from threads import ThreadsError
-        if isinstance(e, (InstagramError, ThreadsError)):
-            doc = "docs/SETUP_THREADS.md" if isinstance(e, ThreadsError) else "docs/SETUP.md"
-            log.error("\n❌ %s\n\n해결 방법은 %s 의 '문제 해결' 표를 확인하세요.", e, doc)
-            sys.exit(1)
+        # threads.py 처럼 안 쓰는 모듈은 올리지 않았을 수 있으므로
+        # 없으면 조용히 건너뜁니다. (없다고 여기서 죽으면 진짜 원인이 가려집니다)
+        for mod_name, cls_name, doc in (
+            ("instagram", "InstagramError", "docs/SETUP.md"),
+            ("threads", "ThreadsError", "docs/SETUP_THREADS.md"),
+        ):
+            try:
+                err_cls = getattr(importlib.import_module(mod_name), cls_name)
+            except Exception:
+                continue
+            if isinstance(e, err_cls):
+                log.error("\n❌ %s\n\n해결 방법은 %s 의 '문제 해결' 표를 확인하세요.", e, doc)
+                sys.exit(1)
         raise
 
 
