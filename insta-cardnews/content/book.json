@@ -17,10 +17,16 @@
       "24편의 솔직한 이야기."
     ],
     "action": "프로필 링크에서 만나보세요",
-    "footer": "YES24 전자책 판매 중"
+    "footer": "YES24 전자책 · 밀리의 서재"
   },
-  "caption_template": "{hook}\n\n{summary}\n\n————\n\n📖 『IT기업에서 하루하루 어휴』 (김광섭)\nYES24 전자책으로 만나보실 수 있습니다.\n\n👉 구매 링크는 프로필 상단 또는 첫 번째 댓글에 있습니다.\n\n{hashtags}",
-  "comment_template": "📖 『IT기업에서 하루하루 어휴』 전자책 보러 가기\n{buy_url}\n\n(인스타 특성상 댓글 링크는 클릭이 안 될 수 있어요. 프로필 상단 링크를 눌러주세요!)",
+  "caption_template": "{hook}\n\n{summary}\n\n————\n\n📖 『IT기업에서 하루하루 어휴』 (김광섭)\nYES24 전자책으로 구매하거나\n밀리의 서재 구독으로도 읽으실 수 있습니다.\n\n👉 링크는 프로필 상단 또는 첫 번째 댓글에 있습니다.\n\n{hashtags}",
+  "comment_template": "📖 『IT기업에서 하루하루 어휴』 읽어보기\n\n· YES24 전자책 → {buy_url}\n· 밀리의 서재 구독 중이시면 검색해서 바로 보실 수 있어요.\n\n(인스타 특성상 댓글 링크는 클릭이 안 될 수 있어요. 프로필 상단 링크를 눌러주세요!)",
+  "threads": {
+    "root_template": "{hook}\n\n{summary}",
+    "body_intro": "책에서는 이렇게 풀었습니다.",
+    "cta_template": "📖 『IT기업에서 하루하루 어휴』 (김광섭)\n4년간 IT 기업에서 쓴 24편의 기록입니다.\n\nYES24 전자책 ↓\n{buy_url}\n\n밀리의 서재 구독 중이시면 검색해서 바로 보실 수 있어요.",
+    "max_body_slides": 3
+  },
   "base_hashtags": [
     "#IT기업에서하루하루어휴",
     "#직장인공감",
