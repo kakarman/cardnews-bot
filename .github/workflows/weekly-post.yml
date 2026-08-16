@@ -1,0 +1,106 @@
+name: 주간 카드뉴스 자동 게시
+
+on:
+  schedule:
+    # UTC 기준입니다. 아래는 매주 화요일 21:00 (한국시간) = 화요일 12:00 UTC
+    # 요일 숫자: 0=일 1=월 2=화 3=수 4=목 5=금 6=토
+    # 원하는 한국시간에서 9시간을 빼세요.
+    #   예) 목요일 20:00 KST → "0 11 * * 4"
+    #   예) 일요일 09:00 KST → "0 0 * * 0"
+    - cron: "0 12 * * 2"
+
+  workflow_dispatch:
+    inputs:
+      week:
+        description: "특정 회차 번호 (비워두면 다음 순서)"
+        required: false
+        type: string
+      dry_run:
+        description: "실제 게시 없이 캡션·URL만 확인"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-post
+  cancel-in-progress: false
+
+# 코드가 insta-cardnews/ 폴더 안에 있으므로 모든 명령을 그 안에서 실행합니다.
+defaults:
+  run:
+    working-directory: insta-cardnews
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 한글 폰트 설치
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+
+      - name: 파이썬 준비
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: insta-cardnews/requirements.txt
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 카드 이미지 생성
+        run: |
+          if [ -n "${{ inputs.week }}" ]; then
+            python src/main.py render --week ${{ inputs.week }}
+          else
+            python src/main.py render
+          fi
+
+      - name: 이미지 커밋 (인스타가 읽어갈 공개 URL 확보)
+        run: |
+          git config user.name  "cardnews-bot"
+          git config user.email "actions@github.com"
+          git add docs/cards
+          git diff --staged --quiet || git commit -m "cards: $(date -u +%Y-%m-%d) 회차 이미지 생성"
+          git push
+
+      - name: CDN 반영 대기
+        run: sleep 20
+
+      - name: 인스타그램 게시
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_AUTH_MODE: ${{ vars.IG_AUTH_MODE || 'instagram' }}
+          GRAPH_API_VERSION: ${{ vars.GRAPH_API_VERSION || 'v23.0' }}
+          PUBLIC_BASE_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/insta-cardnews/docs/cards
+        run: |
+          ARGS=""
+          [ -n "${{ inputs.week }}" ] && ARGS="$ARGS --week ${{ inputs.week }}"
+          [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
+          python src/main.py post $ARGS
+
+      - name: 발행 기록 저장
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          git add state.json
+          git diff --staged --quiet || git commit -m "state: 회차 진행 기록"
+          git pull --rebase --autostash || true
+          git push
+
+      - name: 이번 회차 카드 미리보기 첨부
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cards
+          path: insta-cardnews/docs/cards/**/*.png
+          if-no-files-found: ignore
+          retention-days: 14
