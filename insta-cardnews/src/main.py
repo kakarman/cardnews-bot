@@ -350,7 +350,10 @@ def cmd_pack(args):
     def w(name: str, text: str) -> str:
         p = os.path.join(outdir, name)
         with open(p, "w", encoding="utf-8") as f:
-            f.write(text)
+            # 반드시 줄바꿈으로 끝내야 합니다.
+            # GitHub Actions 가 이 파일을 여러 줄 환경변수로 읽을 때,
+            # 마지막 줄에 줄바꿈이 없으면 종료 표시가 본문에 달라붙어 실패합니다.
+            f.write(text.rstrip("\n") + "\n")
         return p
 
     if args.kind == "reels":
