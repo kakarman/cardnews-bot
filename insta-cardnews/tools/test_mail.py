@@ -23,6 +23,16 @@ from email.message import EmailMessage
 
 HOST = "smtp.gmail.com"
 
+# 구글 앱 비밀번호 화면은 'abcd efgh ijkl mnop' 처럼 보이지만,
+# 실제로는 일반 공백이 아니라 줄바꿈 없는 공백(U+00A0)을 씁니다.
+# 그대로 복사하면 눈에 안 보이는 문자가 섞여 들어가 SMTP 로그인이 실패합니다.
+# 아래 정규식으로 모든 종류의 공백과 폭 없는 문자를 싹 걷어냅니다.
+INVISIBLE = re.compile(r"[\s ​‌‍⁠﻿]+")
+
+
+def clean_pw(raw: str) -> str:
+    return INVISIBLE.sub("", raw or "")
+
 
 def diagnose(user: str, pw_raw: str) -> list[str]:
     """보내기 전에 눈에 보이는 문제부터 걸러낸다."""
@@ -36,7 +46,7 @@ def diagnose(user: str, pw_raw: str) -> list[str]:
     if user != user.strip():
         warns.append("주소 앞뒤에 공백이 붙어 있습니다.")
 
-    pw = pw_raw.replace(" ", "")
+    pw = clean_pw(pw_raw)
     if pw_raw != pw_raw.strip():
         warns.append("앱 비밀번호 앞뒤에 공백이나 줄바꿈이 붙어 있습니다. (가장 흔한 원인)")
     if len(pw) != 16:
@@ -93,12 +103,16 @@ def send_test(user: str, pw: str, to: str, port: int) -> None:
 def describe(pw_raw: str) -> str:
     """비밀번호 자체는 절대 출력하지 않고, 모양만 설명한다."""
     stripped = pw_raw.strip()
-    pw = stripped.replace(" ", "")
+    pw = clean_pw(pw_raw)
     bits = [f"길이 {len(pw)}자(공백 제외)"]
     if pw_raw != stripped:
         bits.append("⚠️ 앞뒤에 공백/줄바꿈 있음")
     if " " in stripped:
-        bits.append("가운데 공백 있음(자동 제거함)")
+        bits.append("가운데 일반 공백 있음")
+    weird = sorted({c for c in pw_raw if c != " " and INVISIBLE.fullmatch(c)})
+    if weird:
+        codes = ", ".join(f"U+{ord(c):04X}" for c in weird)
+        bits.append(f"🔴 보이지 않는 특수 문자 {len(weird)}종 포함 ({codes})")
     kinds = []
     if any(c.islower() for c in pw):
         kinds.append("소문자")
@@ -119,7 +133,7 @@ def run_env() -> int:
     user = (os.environ.get("MAIL_USERNAME") or "").strip()
     pw_raw = os.environ.get("MAIL_PASSWORD") or ""
     to = (os.environ.get("MAIL_TO") or "").strip()
-    pw = pw_raw.replace(" ", "").strip()
+    pw = clean_pw(pw_raw)
 
     print("Gmail 설정 진단")
     print("─" * 46)
@@ -174,7 +188,7 @@ def main() -> int:
 
     user = input("보내는 Gmail 주소 (MAIL_USERNAME): ").strip()
     pw_raw = getpass.getpass("앱 비밀번호 16자 (입력해도 화면에 안 보입니다): ")
-    pw = pw_raw.replace(" ", "").strip()
+    pw = clean_pw(pw_raw)
 
     warns = diagnose(user, pw_raw)
     if warns:
