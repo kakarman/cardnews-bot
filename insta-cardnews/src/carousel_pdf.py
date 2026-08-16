@@ -5,6 +5,9 @@
 
 카드 원본 비율(1080×1350, 4:5)을 그대로 페이지 크기로 써서
 여백이나 잘림 없이 화면을 가득 채우게 만듭니다.
+
+PDF 생성에 Pillow만 사용합니다. 카드 렌더링에 이미 쓰고 있는 라이브러리라
+추가로 설치할 것이 없습니다.
 """
 
 from __future__ import annotations
@@ -13,9 +16,11 @@ import logging
 import os
 
 from PIL import Image
-from reportlab.pdfgen import canvas
 
 log = logging.getLogger(__name__)
+
+# 72dpi 로 저장하면 1픽셀 = 1포인트가 되어 카드 크기가 그대로 페이지 크기가 됩니다.
+DPI = 72.0
 
 
 def build(card_paths: list[str], out_path: str, title: str = "",
@@ -25,24 +30,21 @@ def build(card_paths: list[str], out_path: str, title: str = "",
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
 
-    with Image.open(card_paths[0]) as im:
-        page_w, page_h = im.size
+    pages = [Image.open(p).convert("RGB") for p in card_paths]
+    try:
+        pages[0].save(
+            out_path,
+            "PDF",
+            save_all=True,
+            append_images=pages[1:],
+            resolution=DPI,
+            title=title or None,
+            author=author or None,
+        )
+    finally:
+        for im in pages:
+            im.close()
 
-    c = canvas.Canvas(out_path, pagesize=(page_w, page_h))
-    if title:
-        c.setTitle(title)
-    if author:
-        c.setAuthor(author)
-
-    for p in card_paths:
-        # 카드 비율이 다르면 페이지도 그에 맞춰 바꿔 잘림을 막는다
-        with Image.open(p) as im:
-            w, h = im.size
-        c.setPageSize((w, h))
-        c.drawImage(p, 0, 0, width=w, height=h)
-        c.showPage()
-
-    c.save()
     size_kb = os.path.getsize(out_path) / 1024
     log.info("PDF 캐러셀 생성: %s (%d쪽, %.0fKB)", out_path, len(card_paths), size_kb)
     return out_path
