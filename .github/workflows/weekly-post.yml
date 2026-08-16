@@ -110,10 +110,14 @@ jobs:
       - name: 메일 본문 읽기
         if: ${{ inputs.dry_run != true }}
         run: |
+          # 본문 마지막 줄에 줄바꿈이 없으면 종료 표시(CARDNEWS_EOF)가
+          # 본문에 달라붙어 "Matching delimiter not found" 오류가 납니다.
+          # 아래 빈 echo 한 줄이 그 경우를 막아줍니다.
           {
             echo 'MAIL_BODY<<CARDNEWS_EOF'
             cat output/email/body_reels.txt
-            echo CARDNEWS_EOF
+            echo ''
+            echo 'CARDNEWS_EOF'
           } >> "$GITHUB_ENV"
 
       - name: 릴스 알림 메일 보내기
