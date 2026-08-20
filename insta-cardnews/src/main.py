@@ -29,7 +29,13 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import render  # noqa: E402
+# render 는 Pillow(이미지 라이브러리)를 끌어옵니다.
+# check / refresh 처럼 이미지가 필요 없는 명령까지 Pillow 를 요구하면
+# 가벼운 환경에서 엉뚱한 ModuleNotFoundError 로 실패합니다.
+# 그래서 실제로 쓰는 함수 안에서만 불러옵니다.
+def _render():
+    import render
+    return render
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONTENT = os.path.join(ROOT, "content")
@@ -165,14 +171,14 @@ def cmd_render(args):
     if args.all:
         outdir = os.path.join(ROOT, "output", "preview")
         for p in posts:
-            render.render_post(p, book, outdir)
+            _render().render_post(p, book, outdir)
         log.info("24주치 미리보기를 %s 에 저장했습니다.", outdir)
         return
 
     state = load_state()
     post = pick_post(posts, state, args.week)
     outdir = os.path.join(CARDS_DIR, f"w{post['week']:02d}")
-    paths = render.render_post(post, book, outdir)
+    paths = _render().render_post(post, book, outdir)
     log.info("WEEK %02d · %s", post["week"], post["chapter"])
     for p in paths:
         log.info("  %s", os.path.relpath(p, ROOT))
@@ -256,7 +262,7 @@ def cmd_post(args):
     post = pick_post(posts, state, args.week)
 
     outdir = os.path.join(CARDS_DIR, f"w{post['week']:02d}")
-    paths = render.render_post(post, book, outdir)
+    paths = _render().render_post(post, book, outdir)
 
     base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
     urls = [f"{base}/w{post['week']:02d}/{os.path.basename(p)}" for p in paths]
@@ -367,7 +373,7 @@ def cmd_pack(args):
 
     if args.kind == "reels":
         import video
-        cards = render.render_post(
+        cards = _render().render_post(
             post, book, os.path.join(CARDS_DIR, f"w{week:02d}"))
         mp4 = os.path.join(outdir, f"w{week:02d}_reels.mp4")
         video.build(cards, mp4)
@@ -410,7 +416,7 @@ def cmd_pack(args):
 
     else:  # linkedin
         import carousel_pdf
-        cards = render.render_post(
+        cards = _render().render_post(
             post, book,
             os.path.join(ROOT, "output", "linkedin_cards", f"w{week:02d}"),
             cta_variant="linkedin")
@@ -580,7 +586,7 @@ def cmd_video(args):
     outdir = os.path.join(ROOT, "output", "video")
     made = []
     for post in targets:
-        cards = render.render_post(
+        cards = _render().render_post(
             post, book, os.path.join(CARDS_DIR, f"w{post['week']:02d}"))
         out = os.path.join(outdir, f"w{post['week']:02d}_reels.mp4")
         video.build(cards, out)
@@ -602,7 +608,7 @@ def cmd_pdf(args):
     outdir = os.path.join(ROOT, "output", "pdf")
     for post in targets:
         # 링크드인용은 마지막 장을 '첫 댓글에 링크' 문구로 바꿔 따로 렌더링합니다.
-        cards = render.render_post(
+        cards = _render().render_post(
             post, book,
             os.path.join(ROOT, "output", "linkedin_cards", f"w{post['week']:02d}"),
             cta_variant="linkedin")
@@ -625,7 +631,7 @@ def cmd_threads(args):
 
     # 표지 카드를 루트 포스트 이미지로 쓰기 위해 렌더링
     outdir = os.path.join(CARDS_DIR, f"w{post['week']:02d}")
-    paths = render.render_post(post, book, outdir)
+    paths = _render().render_post(post, book, outdir)
     base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
     cover_url = (f"{base}/w{post['week']:02d}/{os.path.basename(paths[0])}"
                  if base else None)
