@@ -41,7 +41,24 @@ jobs:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_AUTH_MODE: ${{ vars.IG_AUTH_MODE || 'instagram' }}
-        run: python src/main.py check --warn-days 10
+        run: |
+          # 결과를 로그뿐 아니라 요약 화면에도 남깁니다.
+          # 매번 로그를 파고들지 않아도 무슨 일인지 바로 보이게 하기 위함입니다.
+          set +e
+          python src/main.py check --warn-days 10 2>&1 | tee /tmp/check.log
+          CODE=${PIPESTATUS[0]}
+          {
+            if [ "$CODE" = "0" ]; then
+              echo "## ✅ 토큰 정상"
+            else
+              echo "## ❌ 점검 실패 (exit $CODE)"
+            fi
+            echo ""
+            echo '```'
+            cat /tmp/check.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $CODE
 
       - name: 알림 이슈 만들기
         if: steps.check.outcome == 'failure' || steps.check.outputs.needs_refresh == 'true'
