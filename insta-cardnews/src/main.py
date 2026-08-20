@@ -416,9 +416,29 @@ def cmd_pack(args):
           f"[B. 표지 1장과 올릴 전체 본문]\n\n{t['full']}\n\n\n"
           f"[게시 직후 직접 달 첫 댓글]\n\n{t['first_comment']}\n")
 
+        # 인스타 게시가 실패한 주에는 같은 회차가 또 오게 됩니다.
+        # 중복 게시를 막기 위해 언제 올라간 회차인지 알려줍니다.
+        stale = ""
+        for h in reversed(state.get("history", [])):
+            if h.get("week") != week or not h.get("posted_at"):
+                continue
+            try:
+                d = datetime.fromisoformat(h["posted_at"])
+                days = (datetime.now(timezone.utc) - d).days
+            except ValueError:
+                break
+            if days >= 3:
+                stale = (
+                    f"⚠️ 이 회차는 {days}일 전에 인스타에 올라간 것입니다.\n"
+                    "   이번 주 인스타 게시가 실패했을 수 있습니다.\n"
+                    "   이미 링크드인에 올리셨다면 이 메일은 건너뛰세요.\n"
+                )
+            break
+
         body = "\n".join([
             f"오늘 링크드인에 올릴 {week}회차 「{post['chapter']}」 입니다.",
             "",
+            *([stale, ""] if stale else []),
             "1. 링크드인 글쓰기 → 첨부 아이콘 → '문서 추가' 로 첨부 PDF 업로드",
             "2. 아래 본문을 복사해 붙여넣기",
             "3. 게시 직후 맨 아래 '첫 댓글'을 직접 댓글로 등록",
