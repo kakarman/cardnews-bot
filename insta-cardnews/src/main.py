@@ -201,8 +201,17 @@ def _emit(key: str, value) -> None:
 
 
 def cmd_check(args):
-    c = _client()
-    me = c.whoami()
+    # 토큰 확인을 가장 먼저 합니다.
+    # 이 단계를 통과하면 token_ok=true 를 남기므로,
+    # 이후 단계가 실패하더라도 '토큰 만료'로 잘못 보고되지 않습니다.
+    try:
+        c = _client()
+        me = c.whoami()
+    except Exception:
+        _emit("token_ok", "false")
+        raise
+    _emit("token_ok", "true")
+
     log.info("인증 방식 : %s (%s)", c.auth, c.host)
     log.info("연결 OK   : @%s (id=%s)", me.get("username"), me.get("id"))
     base = os.environ.get("PUBLIC_BASE_URL", "")
