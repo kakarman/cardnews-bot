@@ -47,8 +47,10 @@ jobs:
         if: steps.check.outcome == 'failure' || steps.check.outputs.needs_refresh == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEAD: ${{ steps.check.outcome }}
+          OUTCOME: ${{ steps.check.outcome }}
+          TOKEN_OK: ${{ steps.check.outputs.token_ok }}
           DAYS: ${{ steps.check.outputs.days_left }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           gh label create token-alert --color D93F0B --description "인스타 토큰 알림" --force || true
 
@@ -58,13 +60,30 @@ jobs:
             exit 0
           fi
 
-          if [ "$DEAD" = "failure" ]; then
+          # 점검이 실패했다고 무조건 '토큰 만료'는 아닙니다.
+          # token_ok 로 '토큰이 진짜 거부됐는지' 와
+          # '스크립트가 다른 이유로 죽었는지' 를 구분합니다.
+          if [ "$OUTCOME" = "failure" ] && [ "$TOKEN_OK" = "false" ]; then
             TITLE="🔴 인스타 토큰이 만료됐습니다 — 주간 게시가 멈춥니다"
-            HEAD="토큰 점검에 실패했습니다. **이미 게시가 멈췄거나 곧 멈춥니다.** 아래 순서로 갱신해 주세요."
+            HEAD="인스타그램이 토큰을 거부했습니다. **이미 게시가 멈췄거나 곧 멈춥니다.** 아래 순서로 갱신해 주세요."
+            BODY_FILE=docs/token-alert.md
+          elif [ "$OUTCOME" = "failure" ]; then
+            TITLE="🟠 토큰 점검이 실패했습니다 (토큰 문제는 아닐 수 있음)"
+            HEAD="점검 도중 오류가 났지만 **토큰 만료로 확인된 것은 아닙니다.** 설정 파일 문법 오류처럼 다른 원인일 수 있으니, 아래 실행 기록에서 진짜 원인을 먼저 확인하세요."
+            EXTRA="원인을 고친 뒤 Actions 에서 **토큰 상태 점검**을 다시 실행하고, 정상이면 이 이슈를 닫아주세요."
+            BODY_FILE=""
           else
             TITLE="🟡 인스타 토큰 만료 ${DAYS}일 전 — 갱신이 필요합니다"
             HEAD="토큰 만료가 **약 ${DAYS}일** 남았습니다. 지금 갱신해 두시면 게시가 끊기지 않습니다."
+            BODY_FILE=docs/token-alert.md
           fi
 
-          { echo "$HEAD"; echo ""; cat docs/token-alert.md; } > /tmp/token-issue.md
+          {
+            echo "$HEAD"
+            echo ""
+            echo "👉 [이번 실행 기록 열기]($RUN_URL)"
+            echo ""
+            [ -n "$EXTRA" ] && { echo "$EXTRA"; echo ""; }
+            [ -n "$BODY_FILE" ] && cat "$BODY_FILE"
+          } > /tmp/token-issue.md
           gh issue create --title "$TITLE" --label token-alert --body-file /tmp/token-issue.md
