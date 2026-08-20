@@ -30,6 +30,21 @@ HOSTS = {
 DEFAULT_VERSION = "v23.0"
 DEFAULT_AUTH = "instagram"
 
+# 아래 오류들은 우리 잘못이 아니라 Meta 쪽이 잠깐 불안정한 경우입니다.
+# 잠시 뒤 다시 시도하면 대부분 그냥 성공합니다.
+RETRY_HTTP = {429, 500, 502, 503, 504}
+RETRY_CODES = {
+    1,    # An unknown error occurred
+    2,    # An unexpected error has occurred  ← 가장 흔함
+    4,    # Application request limit reached
+    17,   # User request limit reached
+    32,   # Page request limit reached
+    341,  # Application limit reached
+    613,  # Calls to this api have exceeded the rate limit
+}
+MAX_RETRIES = 5
+RETRY_BASE_DELAY = 8  # 초. 시도할수록 8 → 16 → 24 … 로 늘어납니다
+
 
 class InstagramError(RuntimeError):
     pass
@@ -64,26 +79,93 @@ class InstagramClient:
             self.user_id = self._resolve_self_id()
 
     # ── 저수준 ──────────────────────────────────────────
-    def _call(self, method: str, path: str, **params) -> dict:
-        params["access_token"] = self.token
-        url = f"{self.base}/{path.lstrip('/')}"
+    def _once(self, method: str, url: str, params: dict):
         r = requests.request(method, url, data=params if method == "POST" else None,
                              params=None if method == "POST" else params,
                              timeout=self.timeout)
         try:
-            data = r.json()
+            return r, r.json()
         except ValueError:
-            raise InstagramError(f"응답을 해석할 수 없습니다 ({r.status_code}): {r.text[:300]}")
-        if r.status_code >= 400 or "error" in data:
+            return r, {"error": {"message": r.text[:300], "type": "NonJSON"}}
+
+    def _call(self, method: str, path: str, retry: bool = True, **params) -> dict:
+        """retry=False 는 '두 번 실행되면 안 되는 요청'에 씁니다(예: 발행)."""
+        params["access_token"] = self.token
+        url = f"{self.base}/{path.lstrip('/')}"
+        last = ""
+
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                r, data = self._once(method, url, params)
+            except requests.RequestException as e:  # 네트워크 자체가 흔들린 경우
+                r, data = None, {"error": {"message": str(e), "type": "Network"}}
+
+            if r is not None and r.status_code < 400 and "error" not in data:
+                return data
+
             err = data.get("error", {})
-            raise InstagramError(
-                f"Graph API 오류 [{r.status_code}] "
-                f"{err.get('type')} / code={err.get('code')} "
+            code = err.get("code")
+            status = r.status_code if r is not None else 0
+            last = (
+                f"Graph API 오류 [{status}] {err.get('type')} / code={code} "
                 f"subcode={err.get('error_subcode')}\n"
                 f"  message: {err.get('message')}\n"
                 f"  요청: {method} {url}"
             )
-        return data
+
+            transient = (status in RETRY_HTTP or code in RETRY_CODES
+                         or err.get("type") in {"Network", "NonJSON"})
+            if retry and transient and attempt < MAX_RETRIES:
+                wait = RETRY_BASE_DELAY * attempt
+                log.warning(
+                    "  Meta 쪽 일시적 오류(code=%s). %d초 뒤 다시 시도합니다 (%d/%d)",
+                    code, wait, attempt, MAX_RETRIES - 1)
+                time.sleep(wait)
+                continue
+
+            if transient and not retry:
+                last += ("\n\n  ⚠️ 이 요청은 두 번 실행되면 중복 게시가 될 수 있어"
+                         "\n     자동 재시도를 하지 않았습니다."
+                         "\n     인스타그램을 확인해 보시고, 올라간 게 없으면"
+                         "\n     Actions 에서 워크플로를 다시 실행하세요.")
+            elif transient:
+                last += ("\n\n  ⚠️ Meta 쪽 일시적 오류가 계속되고 있습니다."
+                         f"\n     {MAX_RETRIES - 1}번 재시도했지만 실패했습니다."
+                         "\n     보통 몇십 분 뒤에는 정상으로 돌아옵니다."
+                         "\n     Actions 에서 워크플로를 다시 실행해 주세요.")
+            raise InstagramError(last)
+
+        raise InstagramError(last)
+
+    def preflight(self, urls: list[str], tries: int = 6, delay: int = 10) -> None:
+        """인스타에 넘기기 전에 이미지 URL이 실제로 열리는지 확인한다.
+
+        GitHub 에 방금 올린 이미지가 CDN 에 아직 안 퍼졌을 때,
+        Meta 가 내뱉는 알 수 없는 오류 대신 명확한 메시지를 보기 위함입니다.
+        """
+        for url in urls:
+            for i in range(1, tries + 1):
+                try:
+                    r = requests.head(url, timeout=20, allow_redirects=True)
+                    ok = r.status_code == 200 and \
+                        r.headers.get("content-type", "").startswith("image/")
+                    if ok:
+                        break
+                    reason = f"HTTP {r.status_code}, type={r.headers.get('content-type')}"
+                except requests.RequestException as e:
+                    reason = str(e)
+                if i < tries:
+                    log.info("  이미지 아직 준비 안 됨(%s). %d초 대기 (%d/%d)",
+                             reason, delay, i, tries)
+                    time.sleep(delay)
+            else:
+                raise InstagramError(
+                    f"이미지 URL을 열 수 없습니다:\n  {url}\n  ({reason})\n\n"
+                    "  · 저장소가 Private 이면 인스타그램이 이미지를 못 가져옵니다. "
+                    "Public 인지 확인하세요.\n"
+                    "  · 이미지 커밋이 정상적으로 push 됐는지 Actions 로그를 확인하세요."
+                )
+        log.info("  이미지 %d장 모두 접근 가능 확인", len(urls))
 
     # ── 공개 메서드 ─────────────────────────────────────
     def _resolve_self_id(self) -> str:
@@ -152,8 +234,10 @@ class InstagramClient:
         raise InstagramError(f"컨테이너 {container_id} 가 제한 시간 안에 준비되지 않았습니다.")
 
     def publish(self, creation_id: str) -> str:
+        # 발행은 두 번 실행되면 같은 글이 두 번 올라갈 수 있어
+        # 자동 재시도를 하지 않습니다.
         res = self._call("POST", f"{self.user_id}/media_publish",
-                         creation_id=creation_id)
+                         retry=False, creation_id=creation_id)
         return res["id"]
 
     def comment(self, media_id: str, message: str) -> str:
@@ -171,6 +255,9 @@ class InstagramClient:
             raise InstagramError(
                 f"캐러셀은 2~10장이어야 합니다 (현재 {len(image_urls)}장)."
             )
+
+        log.info("0/4 이미지 URL 접근 확인")
+        self.preflight(image_urls)
 
         log.info("1/4 아이템 컨테이너 %d개 생성", len(image_urls))
         children = []
