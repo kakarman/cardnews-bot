@@ -219,7 +219,9 @@ def cmd_check(args):
     _emit("token_ok", "true")
 
     log.info("인증 방식 : %s (%s)", c.auth, c.host)
-    log.info("연결 OK   : @%s (id=%s)", me.get("username"), me.get("id"))
+    # 게시에 실제로 쓰는 ID를 보여줍니다.
+    # 응답에 섞여 오는 다른 식별자를 찍으면 값이 달라 보여 혼란을 줍니다.
+    log.info("연결 OK   : @%s (게시용 ID=%s)", me.get("username"), c.user_id)
     base = os.environ.get("PUBLIC_BASE_URL", "")
     log.info("이미지 URL: %s", base or "(미설정 — 게시 시 실패합니다)")
 
