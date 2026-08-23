@@ -327,29 +327,48 @@ def build_reels_texts(post: dict, book: dict) -> dict:
     }
 
 
-def build_linkedin_texts(post: dict, book: dict) -> dict:
+def _linkedin_cfg() -> dict:
     with open(os.path.join(CONTENT, "linkedin.json"), encoding="utf-8") as f:
-        cfg = json.load(f)
+        return json.load(f)
+
+
+def _linkedin_body(post: dict, cfg: dict, slides: int) -> str:
+    """카드 문안을 링크드인 본문으로 조립한다.
+
+    posts.json 해당 회차에 'linkedin_body' 가 있으면 그 글을 그대로 씁니다.
+    직접 길게 쓴 원고를 넣고 싶을 때 쓰는 자리입니다.
+    """
+    hand = (post.get("linkedin_body") or "").strip()
+    if hand:
+        return hand
+
     q = cfg["questions"].get(str(post["week"]), "")
+    lines = [post["hook"], "", post["summary"], ""]
+
+    lead = cfg.get("lead_in", "").strip()
+    if lead:
+        lines += [lead, ""]
+
+    for slide in post["slides"][:slides]:
+        lines.append(f"▸ {slide['title']}")
+        lines.append(" ".join(slide["body"]))
+        lines.append("")
+
+    if q:
+        lines.append(q)
+    return "\n".join(lines).strip()
+
+
+def build_linkedin_texts(post: dict, book: dict) -> dict:
+    cfg = _linkedin_cfg()
     tags = " ".join(cfg["hashtags"] + post.get("hashtags", [])[:2])
-
-    short = [post["hook"], "", post["summary"], ""]
-    if q:
-        short += [q, ""]
-    short += [cfg["cta"], "", tags]
-
-    full = [post["hook"], "", post["summary"], ""]
-    for slide in post["slides"][: cfg.get("max_body_slides", 3)]:
-        full.append(f"▸ {slide['title']}")
-        full.append(" ".join(slide["body"]))
-        full.append("")
-    if q:
-        full += [q, ""]
-    full += [cfg["cta"], "", tags]
+    tail = f"\n\n{cfg['cta']}\n\n{tags}"
 
     return {
-        "short": "\n".join(short),
-        "full": "\n".join(full),
+        # PDF를 함께 올릴 때: 카드가 내용을 대신하므로 항목을 줄인다
+        "short": _linkedin_body(post, cfg, cfg.get("carousel_slides", 3)) + tail,
+        # 텍스트 위주로 올릴 때: 5장을 모두 풀어 쓴다
+        "full": _linkedin_body(post, cfg, cfg.get("max_body_slides", 5)) + tail,
         "first_comment": cfg["first_comment"].format(buy_url=book["buy_url"]),
     }
 
@@ -465,7 +484,7 @@ def cmd_pack(args):
             "■ 본문 (복붙)",
             "─────────────────────",
             "",
-            t["short"],
+            t["full"],
             "",
             "─────────────────────",
             "■ 게시 직후 달 첫 댓글",
@@ -528,43 +547,25 @@ def cmd_linkedin(args):
     ]
 
     for post in posts:
-        q = cfg["questions"].get(str(post["week"]), "")
-        tags = " ".join(cfg["hashtags"] + post.get("hashtags", [])[:2])
-
-        # A. 캐러셀용 짧은 본문 (카드가 내용을 대신함)
-        short = [post["hook"], "", post["summary"], ""]
-        if q:
-            short += [q, ""]
-        short += [cfg["cta"], "", tags]
-        short_text = "\n".join(short)
-
-        # B. 전체 본문
-        full = [post["hook"], "", post["summary"], ""]
-        for slide in post["slides"][: cfg.get("max_body_slides", 3)]:
-            full.append(f"▸ {slide['title']}")
-            full.append(" ".join(slide["body"]))
-            full.append("")
-        if q:
-            full += [q, ""]
-        full += [cfg["cta"], "", tags]
-        full_text = "\n".join(full)
+        t = build_linkedin_texts(post, book)
+        hand = "  *(직접 쓰신 원고를 사용)*" if post.get("linkedin_body") else ""
 
         out += [
-            f"## {post['week']}회차 — {post['chapter']}",
+            f"## {post['week']}회차 — {post['chapter']}{hand}",
             "",
             f"**첨부**: `w{post['week']:02d}_linkedin.pdf` (A) 또는 "
             f"`w{post['week']:02d}_01_cover.png` (B)",
             "",
-            f"### A. 카드 PDF와 함께 — 짧은 본문 ({len(short_text)}자)",
+            f"### A. 긴 본문 — 메일로 보내드리는 기본값 ({len(t['full'])}자)",
             "",
             "```",
-            short_text,
+            t["full"],
             "```",
             "",
-            f"### B. 표지 1장과 함께 — 전체 본문 ({len(full_text)}자)",
+            f"### B. 짧은 본문 — PDF가 내용을 대신할 때 ({len(t['short'])}자)",
             "",
             "```",
-            full_text,
+            t["short"],
             "```",
             "",
             "---",
