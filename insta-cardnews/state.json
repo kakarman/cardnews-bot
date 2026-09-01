@@ -1,5 +1,5 @@
 {
-  "next_index": 2,
+  "next_index": 3,
   "loop": true,
   "token_issued_at": "2026-08-16",
   "history": [
@@ -29,6 +29,15 @@
       "comment_id": "18455379088187369",
       "comment_error": "",
       "posted_at": "2026-08-25T12:55:20+00:00"
+    },
+    {
+      "week": 3,
+      "chapter": "작은 회사일수록 중요한 '히스토리'의 힘",
+      "media_id": "17916067884243052",
+      "permalink": "https://www.instagram.com/p/DcwE7SMEWEI/",
+      "comment_id": "18133292587722828",
+      "comment_error": "",
+      "posted_at": "2026-09-01T16:20:37+00:00"
     }
   ]
 }
