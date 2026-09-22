@@ -1,5 +1,5 @@
 {
-  "next_index": 5,
+  "next_index": 6,
   "loop": true,
   "token_issued_at": "2026-08-16",
   "history": [
@@ -56,6 +56,15 @@
       "comment_id": "18080728004369646",
       "comment_error": "",
       "posted_at": "2026-09-15T16:38:14+00:00"
+    },
+    {
+      "week": 6,
+      "chapter": "동료가 떠난 자리, 작은 회사의 이별 풍경",
+      "media_id": "18111007964599202",
+      "permalink": "https://www.instagram.com/p/DdmLtHImjaK/",
+      "comment_id": "17908002588513024",
+      "comment_error": "",
+      "posted_at": "2026-09-22T16:38:49+00:00"
     }
   ]
 }
