@@ -1,5 +1,5 @@
 {
-  "next_index": 6,
+  "next_index": 7,
   "loop": true,
   "token_issued_at": "2026-08-16",
   "history": [
@@ -65,6 +65,15 @@
       "comment_id": "17908002588513024",
       "comment_error": "",
       "posted_at": "2026-09-22T16:38:49+00:00"
+    },
+    {
+      "week": 7,
+      "chapter": "사람이 없다… 여기도?",
+      "media_id": "18038961332829686",
+      "permalink": "https://www.instagram.com/p/Dd4WDXaGYzc/",
+      "comment_id": "17960798538218739",
+      "comment_error": "",
+      "posted_at": "2026-09-29T17:55:39+00:00"
     }
   ]
 }
