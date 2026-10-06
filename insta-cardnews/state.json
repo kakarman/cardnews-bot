@@ -1,5 +1,5 @@
 {
-  "next_index": 7,
+  "next_index": 8,
   "loop": true,
   "token_issued_at": "2026-08-16",
   "history": [
@@ -74,6 +74,15 @@
       "comment_id": "17960798538218739",
       "comment_error": "",
       "posted_at": "2026-09-29T17:55:39+00:00"
+    },
+    {
+      "week": 8,
+      "chapter": "경력직 면접: '시간의 방'에서 질문을 던지다",
+      "media_id": "18072756614734000",
+      "permalink": "https://www.instagram.com/p/DeKZPmnGD--/",
+      "comment_id": "18090046379201881",
+      "comment_error": "",
+      "posted_at": "2026-10-06T18:09:46+00:00"
     }
   ]
 }
