@@ -1,5 +1,5 @@
 {
-  "next_index": 8,
+  "next_index": 9,
   "loop": true,
   "token_issued_at": "2026-08-16",
   "history": [
@@ -83,6 +83,15 @@
       "comment_id": "18090046379201881",
       "comment_error": "",
       "posted_at": "2026-10-06T18:09:46+00:00"
+    },
+    {
+      "week": 9,
+      "chapter": "'잘하는 사람'을 찾는다는 것의 어려움",
+      "media_id": "18131802802749738",
+      "permalink": "https://www.instagram.com/p/DechR6LHwOg/",
+      "comment_id": "17904762861352897",
+      "comment_error": "",
+      "posted_at": "2026-10-13T19:06:16+00:00"
     }
   ]
 }
