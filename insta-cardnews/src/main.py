@@ -7,6 +7,8 @@
   python src/main.py check             # 토큰·계정 연결만 점검 (게시 안 함)
   python src/main.py post --dry-run    # 캡션/댓글/이미지 URL만 출력
   python src/main.py post              # 실제 게시 + 첫 댓글 + 회차 넘기기
+  python src/main.py reel --prepare    # 이번 회차 릴스 영상 준비
+  python src/main.py reel              # 방금 올라간 회차 릴스 게시
 
 환경변수 (.env 또는 GitHub Secrets):
   IG_ACCESS_TOKEN     장기 액세스 토큰                       [필수]
@@ -393,11 +395,20 @@ def cmd_pack(args):
         return p
 
     if args.kind == "reels":
+        import shutil
         import video
-        cards = _render().render_post(
-            post, book, os.path.join(CARDS_DIR, f"w{week:02d}"))
         mp4 = os.path.join(outdir, f"w{week:02d}_reels.mp4")
-        video.build(cards, mp4)
+        if os.path.exists(reel_path(week)):
+            shutil.copyfile(reel_path(week), mp4)
+        else:
+            cards = _render().render_post(
+                post, book, os.path.join(CARDS_DIR, f"w{week:02d}"))
+            video.build(cards, mp4)
+
+        feed = next((h for h in reversed(state.get("history", []))
+                     if h.get("week") == week), {})
+        reel = next((h for h in reversed(state.get("reels_history", []))
+                     if h.get("week") == week), {})
 
         t = build_reels_texts(post, book)
         w(f"w{week:02d}_릴스_문구.txt",
@@ -405,17 +416,40 @@ def cmd_pack(args):
           f"[유튜브 쇼츠 제목]\n\n{t['shorts_title']}\n\n\n"
           f"[유튜브 쇼츠 설명]\n\n{t['shorts_description']}\n")
 
+        if reel.get("permalink"):
+            reel_lines = [
+                f"· 릴스    : {reel['permalink']}",
+                "",
+                "릴스까지 자동으로 올라갔습니다. 따로 하실 일은 없습니다.",
+            ]
+            manual = []
+        else:
+            reel_lines = [
+                "· 릴스    : ⚠️ 자동 게시 실패 (Actions 로그 참고)",
+                "",
+                "첨부한 mp4와 아래 캡션으로 직접 올려주시면 됩니다.",
+            ]
+            manual = [
+                "─────────────────────",
+                "■ 인스타 릴스 캡션 (복붙)",
+                "─────────────────────",
+                "",
+                t["caption"],
+                "",
+            ]
+
         body = "\n".join([
             f"{week}회차 「{post['chapter']}」 인스타 게시가 끝났습니다.",
             "",
-            "릴스는 본 게시물과 시차가 적을수록 좋으니 오늘 안에 올려주세요.",
-            "첨부한 mp4를 올리면서 앱에서 유행하는 음악을 얹으면 도달이 훨씬 좋아집니다.",
+            f"· 카드뉴스: {feed.get('permalink', '(링크 없음)')}",
+            *reel_lines,
             "",
+            *manual,
             "─────────────────────",
-            "■ 인스타 릴스 캡션 (복붙)",
+            "■ (선택) 유튜브 쇼츠도 올리실 경우",
             "─────────────────────",
             "",
-            t["caption"],
+            "첨부한 mp4를 그대로 쓰시면 됩니다.",
             "",
             "─────────────────────",
             "■ 유튜브 쇼츠 제목",
@@ -430,7 +464,7 @@ def cmd_pack(args):
             t["shorts_description"],
             "",
             "─────────────────────",
-            "첨부: 릴스·쇼츠용 세로 영상(mp4, 무음), 같은 내용의 문구 파일",
+            "첨부: 세로 영상(mp4), 같은 내용의 문구 파일",
         ])
         w("body_reels.txt", body)
         log.info("\n릴스 꾸러미 준비 완료 (%d회차) → %s", week, outdir)
@@ -578,6 +612,90 @@ def cmd_linkedin(args):
     log.info("링크드인 원고 %d편 생성 → %s", len(posts), os.path.relpath(path, ROOT))
 
 
+def reel_path(week: int) -> str:
+    """릴스 영상은 카드 이미지와 같은 폴더에 둡니다(같이 커밋되어 공개 URL이 생김)."""
+    return os.path.join(CARDS_DIR, f"w{week:02d}", f"w{week:02d}_reels.mp4")
+
+
+def cmd_reel(args):
+    """릴스 영상 준비(--prepare) 또는 게시.
+
+    워크플로 순서:
+      ① reel --prepare : 이번에 올라갈 회차의 영상을 만들어 docs/cards 에 둠 → 커밋
+      ② post           : 카드뉴스 게시
+      ③ reel           : 방금 올라간 회차의 릴스 게시
+    """
+    import video
+
+    book, posts = load()
+    state = load_state()
+
+    if args.prepare:
+        post = pick_post(posts, state, args.week)          # 이번에 올라갈 회차
+    else:
+        week = args.week or last_posted_week(state, posts)  # 방금 올라간 회차
+        post = next(p for p in posts if p["week"] == week)
+    week = post["week"]
+    mp4 = reel_path(week)
+
+    if args.prepare or not os.path.exists(mp4):
+        cards = _render().render_post(
+            post, book, os.path.join(CARDS_DIR, f"w{week:02d}"))
+        video.build(cards, mp4)
+    if args.prepare:
+        log.info("WEEK %02d 릴스 영상 준비 완료 → %s", week, os.path.relpath(mp4, ROOT))
+        return
+
+    # 같은 회차 릴스를 두 번 올리지 않도록 (워크플로를 다시 돌리는 경우 대비)
+    done = [h for h in state.get("reels_history", []) if h.get("week") == week]
+    if done and not args.force:
+        log.info("%d회차 릴스는 이미 올라가 있습니다 → %s", week, done[-1].get("permalink"))
+        log.info("다시 올리려면 --force 를 붙이세요.")
+        _emit("reel_status", "skipped")
+        _emit("reel_permalink", done[-1].get("permalink", ""))
+        return
+
+    name = os.path.basename(mp4)
+    urls = []
+    for key in ("VIDEO_BASE_URL", "PUBLIC_BASE_URL"):
+        base = os.environ.get(key, "").rstrip("/")
+        u = f"{base}/w{week:02d}/{name}" if base else ""
+        if u and u not in urls:
+            urls.append(u)
+
+    caption = build_reels_texts(post, book)["caption"]
+    comment = build_comment(book)
+
+    log.info("═" * 56)
+    log.info("[릴스] WEEK %02d · %s", week, post["chapter"])
+    log.info("═" * 56)
+    for u in urls:
+        log.info("  %s", u)
+    log.info("\n─ 캡션 ─\n%s\n", caption)
+
+    if args.dry_run:
+        log.info("[dry-run] 실제 게시는 하지 않았습니다.")
+        return
+    if not urls:
+        raise SystemExit("VIDEO_BASE_URL / PUBLIC_BASE_URL 이 없어 릴스를 올릴 수 없습니다.")
+
+    result = _client().post_reel(urls, caption, first_comment=comment,
+                                 share_to_feed=args.share_to_feed)
+    log.info("릴스 게시 완료 → %s", result.get("permalink") or result["media_id"])
+
+    state.setdefault("reels_history", []).append({
+        "week": week,
+        "chapter": post["chapter"],
+        "media_id": result["media_id"],
+        "permalink": result.get("permalink", ""),
+        "comment_error": result.get("comment_error", ""),
+        "posted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    })
+    save_state(state)
+    _emit("reel_status", "posted")
+    _emit("reel_permalink", result.get("permalink", ""))
+
+
 def cmd_video(args):
     """릴스·쇼츠용 세로 영상(mp4) 생성."""
     import video
@@ -706,6 +824,17 @@ def main():
     pk.add_argument("--kind", choices=["reels", "linkedin"], required=True)
     pk.add_argument("--week", type=int)
     pk.set_defaults(func=cmd_pack)
+
+    rl = sub.add_parser("reel", help="릴스 영상 준비(--prepare) 또는 게시")
+    rl.add_argument("--week", type=int)
+    rl.add_argument("--prepare", action="store_true",
+                    help="게시하지 않고 이번 회차 영상만 docs/cards 에 만들어 둠")
+    rl.add_argument("--dry-run", action="store_true")
+    rl.add_argument("--force", action="store_true",
+                    help="이미 올린 회차여도 다시 올림")
+    rl.add_argument("--share-to-feed", action="store_true",
+                    help="피드 격자에도 노출 (기본: 릴스 탭에만)")
+    rl.set_defaults(func=cmd_reel)
 
     v = sub.add_parser("video", help="릴스·쇼츠용 세로 영상(mp4) 생성")
     v.add_argument("--week", type=int)
