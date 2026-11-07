@@ -137,18 +137,19 @@ class InstagramClient:
 
         raise InstagramError(last)
 
-    def preflight(self, urls: list[str], tries: int = 6, delay: int = 10) -> None:
-        """인스타에 넘기기 전에 이미지 URL이 실제로 열리는지 확인한다.
+    def preflight(self, urls: list[str], tries: int = 6, delay: int = 10,
+                  kind: str = "image") -> None:
+        """인스타에 넘기기 전에 이미지·영상 URL이 실제로 열리는지 확인한다.
 
-        GitHub 에 방금 올린 이미지가 CDN 에 아직 안 퍼졌을 때,
+        GitHub 에 방금 올린 파일이 CDN 에 아직 안 퍼졌을 때,
         Meta 가 내뱉는 알 수 없는 오류 대신 명확한 메시지를 보기 위함입니다.
         """
         for url in urls:
             for i in range(1, tries + 1):
                 try:
                     r = requests.head(url, timeout=20, allow_redirects=True)
-                    ok = r.status_code == 200 and \
-                        r.headers.get("content-type", "").startswith("image/")
+                    ctype = r.headers.get("content-type", "")
+                    ok = r.status_code == 200 and ctype.startswith(f"{kind}/")
                     if ok:
                         break
                     reason = f"HTTP {r.status_code}, type={r.headers.get('content-type')}"
@@ -165,7 +166,8 @@ class InstagramClient:
                     "Public 인지 확인하세요.\n"
                     "  · 이미지 커밋이 정상적으로 push 됐는지 Actions 로그를 확인하세요."
                 )
-        log.info("  이미지 %d장 모두 접근 가능 확인", len(urls))
+        log.info("  %s %d개 모두 접근 가능 확인",
+                 "이미지" if kind == "image" else "영상", len(urls))
 
     # ── 공개 메서드 ─────────────────────────────────────
     def _resolve_self_id(self) -> str:
@@ -227,7 +229,8 @@ class InstagramClient:
             if code == "ERROR":
                 raise InstagramError(
                     f"컨테이너 처리 실패: {res.get('status')}\n"
-                    "  이미지 URL이 공개 접근 가능한지, 형식이 JPEG/PNG인지 확인하세요."
+                    "  파일 URL이 공개 접근 가능한지, 형식이 올바른지(이미지는 JPEG/PNG,"
+                    "\n  영상은 H.264 + AAC mp4) 확인하세요."
                 )
             log.info("  컨테이너 %s 상태=%s (%d/%d)", container_id, code, i + 1, tries)
             time.sleep(delay)
@@ -288,3 +291,55 @@ class InstagramClient:
                 result["comment_error"] = str(e)
 
         return result
+
+    # ── 릴스 ────────────────────────────────────────────
+    def create_reel(self, video_url: str, caption: str,
+                    share_to_feed: bool = False) -> str:
+        res = self._call("POST", f"{self.user_id}/media",
+                         media_type="REELS",
+                         video_url=video_url,
+                         caption=caption,
+                         share_to_feed="true" if share_to_feed else "false")
+        return res["id"]
+
+    def post_reel(self, video_urls: list[str], caption: str,
+                  first_comment: str | None = None,
+                  share_to_feed: bool = False) -> dict:
+        """릴스를 게시한다.
+
+        video_urls 는 후보 주소 목록입니다. 앞에서부터 시도해서
+        인스타가 처리에 성공한 첫 주소로 발행합니다.
+        (GitHub 원본 주소는 영상을 'application/octet-stream' 으로 내보내
+         인스타가 거부할 수 있어, 형식을 제대로 알려주는 CDN 주소를 먼저 씁니다)
+
+        share_to_feed=False 면 피드 격자에는 안 뜨고 릴스 탭에만 올라갑니다.
+        같은 날 카드뉴스가 피드에 올라가므로 중복을 피하려는 기본값입니다.
+        """
+        last_err = None
+        for n, url in enumerate(video_urls, 1):
+            log.info("── 영상 주소 %d/%d: %s", n, len(video_urls), url)
+            try:
+                log.info("1/3 릴스 컨테이너 생성")
+                cid = self.create_reel(url, caption, share_to_feed)
+                log.info("2/3 영상 처리 대기 (보통 30초~2분)")
+                self.wait_ready(cid, tries=40, delay=6)
+            except InstagramError as e:
+                log.warning("  이 주소로는 처리 실패: %s", str(e).splitlines()[0])
+                last_err = e
+                continue
+
+            log.info("3/3 발행")
+            media_id = self.publish(cid)
+            result = {"media_id": media_id, "permalink": self.permalink(media_id),
+                      "video_url": url}
+            if first_comment:
+                try:
+                    time.sleep(5)
+                    result["comment_id"] = self.comment(media_id, first_comment)
+                    log.info("  첫 댓글 등록 완료: %s", result["comment_id"])
+                except InstagramError as e:
+                    log.error("  첫 댓글 등록 실패(게시는 정상): %s", e)
+                    result["comment_error"] = str(e)
+            return result
+
+        raise last_err or InstagramError("릴스로 올릴 영상 주소가 없습니다.")
