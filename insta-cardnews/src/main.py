@@ -407,8 +407,6 @@ def cmd_pack(args):
 
         feed = next((h for h in reversed(state.get("history", []))
                      if h.get("week") == week), {})
-        reel = next((h for h in reversed(state.get("reels_history", []))
-                     if h.get("week") == week), {})
 
         t = build_reels_texts(post, book)
         w(f"w{week:02d}_릴스_문구.txt",
@@ -416,27 +414,22 @@ def cmd_pack(args):
           f"[유튜브 쇼츠 제목]\n\n{t['shorts_title']}\n\n\n"
           f"[유튜브 쇼츠 설명]\n\n{t['shorts_description']}\n")
 
-        if reel.get("permalink"):
-            reel_lines = [
-                f"· 릴스    : {reel['permalink']}",
-                "",
-                "릴스까지 자동으로 올라갔습니다. 따로 하실 일은 없습니다.",
-            ]
-            manual = []
-        else:
-            reel_lines = [
-                "· 릴스    : ⚠️ 자동 게시 실패 (Actions 로그 참고)",
-                "",
-                "첨부한 mp4와 아래 캡션으로 직접 올려주시면 됩니다.",
-            ]
-            manual = [
-                "─────────────────────",
-                "■ 인스타 릴스 캡션 (복붙)",
-                "─────────────────────",
-                "",
-                t["caption"],
-                "",
-            ]
+        # 릴스는 앱에서 직접 올립니다(인스타 음악을 얹으려면 앱에서 올려야 함).
+        reel_lines = [
+            "· 릴스    : 첨부한 영상으로 직접 올려주세요",
+            "",
+            "앱에서 릴스를 올릴 때 음악을 고르시면 됩니다.",
+            "영상은 무음이라 고른 음악만 깔끔하게 들립니다.",
+            "처음 몇 시간의 반응이 노출을 좌우하니 되도록 오늘 안에 올려주세요.",
+        ]
+        manual = [
+            "─────────────────────",
+            "■ 인스타 릴스 캡션 (복붙)",
+            "─────────────────────",
+            "",
+            t["caption"],
+            "",
+        ]
 
         body = "\n".join([
             f"{week}회차 「{post['chapter']}」 인스타 게시가 끝났습니다.",
