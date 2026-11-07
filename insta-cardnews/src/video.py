@@ -3,8 +3,13 @@
 인스타 릴스와 유튜브 쇼츠는 9:16(1080×1920)을 씁니다.
 카드는 4:5(1080×1350)라, 위아래를 책 톤의 여백으로 채워 세로로 맞춥니다.
 
-영상은 무음으로 만듭니다. 업로드할 때 앱에서 유행하는 음악을 직접 얹는 편이
-도달에 훨씬 유리하기 때문입니다.
+소리는 기본적으로 '무음 오디오 트랙'을 넣습니다.
+인스타 릴스는 오디오 트랙이 아예 없는 영상을 거부하는 경우가 있어서입니다.
+
+배경음악을 넣고 싶으면 assets/audio/ 폴더에 bgm.mp3 (또는 .m4a/.wav) 를 두세요.
+자동으로 영상 길이에 맞춰 깔리고 끝에서 2초간 페이드아웃됩니다.
+⚠️ 저작권이 해결된 음원(무료 BGM, 직접 만든 곡 등)만 쓰세요.
+   유명 가요를 넣으면 게시물이 내려가거나 음소거될 수 있습니다.
 """
 
 from __future__ import annotations
@@ -21,6 +26,10 @@ import fonts
 import theme as T
 
 log = logging.getLogger(__name__)
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BGM_CANDIDATES = ["bgm.mp3", "bgm.m4a", "bgm.wav"]
+BGM_VOLUME = 0.6
 
 W, H = 1080, 1920          # 9:16 세로
 FPS = 30
@@ -61,6 +70,15 @@ def _to_vertical(card_path: str, index: int, total: int) -> Image.Image:
     return canvas
 
 
+def find_bgm() -> str | None:
+    folder = os.path.join(ROOT, "assets", "audio")
+    for name in BGM_CANDIDATES:
+        p = os.path.join(folder, name)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
 def build(card_paths: list[str], out_path: str,
           durations: list[float] | None = None) -> str:
     """카드 이미지들을 이어 붙여 mp4로 만든다."""
@@ -92,11 +110,31 @@ def build(card_paths: list[str], out_path: str,
                 f.write(f"file '{fp}'\nduration {sec}\n")
             f.write(f"file '{frames[-1]}'\n")
 
+        total = sum(durations)
+        bgm = find_bgm()
+        if bgm:
+            # 음악을 반복해 영상 길이를 채우고, 끝 2초 페이드아웃
+            audio_in = ["-stream_loop", "-1", "-i", bgm]
+            fade_at = max(0.0, total - 2.0)
+            audio_filter = ["-af", f"volume={BGM_VOLUME},afade=t=out:st={fade_at}:d=2"]
+            log.info("배경음악 사용: %s", os.path.relpath(bgm, ROOT))
+        else:
+            # 무음 트랙 (릴스 호환용)
+            audio_in = ["-f", "lavfi", "-i",
+                        "anullsrc=channel_layout=stereo:sample_rate=44100"]
+            audio_filter = []
+
         cmd = [
             "ffmpeg", "-y", "-loglevel", "error",
             "-f", "concat", "-safe", "0", "-i", listfile,
+            *audio_in,
+            "-map", "0:v:0", "-map", "1:a:0",
             "-vf", f"fps={FPS},format=yuv420p",
+            *audio_filter,
             "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+            "-profile:v", "high", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+            "-t", f"{total:.2f}",
             "-movflags", "+faststart",
             out_path,
         ]
@@ -104,7 +142,6 @@ def build(card_paths: list[str], out_path: str,
         if r.returncode != 0:
             raise RuntimeError(f"ffmpeg 실패:\n{r.stderr[:600]}")
 
-    total = sum(durations)
     size_mb = os.path.getsize(out_path) / 1024 / 1024
     log.info("영상 생성 완료: %s (%.0f초, %.1fMB, %dx%d)",
              out_path, total, size_mb, W, H)
