@@ -1,5 +1,5 @@
 {
-  "next_index": 9,
+  "next_index": 10,
   "loop": true,
   "token_issued_at": "2026-11-07",
   "history": [
@@ -92,6 +92,15 @@
       "comment_id": "17904762861352897",
       "comment_error": "",
       "posted_at": "2026-10-13T19:06:16+00:00"
+    },
+    {
+      "week": 10,
+      "chapter": "'군대로의 귀환'인가?",
+      "media_id": "18414684232089247",
+      "permalink": "https://www.instagram.com/p/DfcH7pIoAGl/",
+      "comment_id": "17896464843447710",
+      "comment_error": "",
+      "posted_at": "2026-11-07T11:56:16+00:00"
     }
   ]
 }
