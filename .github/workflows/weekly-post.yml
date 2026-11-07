@@ -67,24 +67,13 @@ jobs:
       - name: ffmpeg 설치 (릴스 영상용)
         run: sudo apt-get install -y -qq ffmpeg
 
-      # 카드뉴스와 같은 회차의 릴스 영상을 미리 만들어 같이 커밋합니다.
-      - name: 릴스 영상 준비
-        run: |
-          if [ -n "${{ inputs.week }}" ]; then
-            python src/main.py reel --prepare --week ${{ inputs.week }}
-          else
-            python src/main.py reel --prepare
-          fi
-
-      - name: 이미지·영상 커밋 (인스타가 읽어갈 공개 URL 확보)
+      - name: 이미지 커밋 (인스타가 읽어갈 공개 URL 확보)
         run: |
           git config user.name  "cardnews-bot"
           git config user.email "actions@github.com"
           git add docs/cards
-          git diff --staged --quiet || git commit -m "cards: $(date -u +%Y-%m-%d) 회차 이미지·영상 생성"
+          git diff --staged --quiet || git commit -m "cards: $(date -u +%Y-%m-%d) 회차 이미지 생성"
           git push
-          # 영상은 이 커밋 기준 주소로 넘깁니다 (CDN 캐시 영향 없음)
-          echo "CARDS_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: CDN 반영 대기
         run: sleep 20
@@ -110,39 +99,9 @@ jobs:
           git pull --rebase --autostash || true
           git push
 
-      # ── 릴스 자동 게시 ──────────────────────────────────
-      # 방금 올라간 회차를 릴스로도 올립니다. 릴스는 팔로워가 아닌 사람에게도
-      # 노출되기 때문에, 새 독자를 만나는 거의 유일한 통로입니다.
-      # 실패해도 카드뉴스 게시는 이미 끝났으므로 워크플로는 계속 진행합니다.
-      - name: 릴스 게시
-        id: reel
-        if: ${{ inputs.dry_run != true }}
-        continue-on-error: true
-        env:
-          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
-          IG_USER_ID: ${{ secrets.IG_USER_ID }}
-          IG_AUTH_MODE: ${{ vars.IG_AUTH_MODE || 'instagram' }}
-          GRAPH_API_VERSION: ${{ vars.GRAPH_API_VERSION || 'v23.0' }}
-          # 1순위: 영상 형식(video/mp4)을 제대로 알려주는 CDN 주소
-          VIDEO_BASE_URL: https://cdn.jsdelivr.net/gh/${{ github.repository }}@${{ env.CARDS_SHA }}/insta-cardnews/docs/cards
-          # 2순위: GitHub 원본 주소
-          PUBLIC_BASE_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ env.CARDS_SHA }}/insta-cardnews/docs/cards
-        run: |
-          ARGS=""
-          [ -n "${{ inputs.week }}" ] && ARGS="$ARGS --week ${{ inputs.week }}"
-          python src/main.py reel $ARGS
-
-      - name: 릴스 기록 저장
-        if: ${{ inputs.dry_run != true }}
-        run: |
-          git add state.json
-          git diff --staged --quiet || git commit -m "state: 릴스 게시 기록"
-          git pull --rebase --autostash || true
-          git push
-
-      # ── 게시 완료 메일 ──────────────────────────────────
-      # 카드뉴스·릴스 링크를 알려주고, 릴스 자동 게시가 실패했을 때만
-      # 직접 올릴 수 있도록 영상과 캡션을 함께 보냅니다.
+      # ── 게시 완료 + 릴스 영상 메일 ────────────────────────
+      # 카드뉴스 링크와 함께 릴스용 영상(mp4)과 캡션을 보냅니다.
+      # 릴스는 앱에서 직접 올려야 인스타 음악을 얹을 수 있어서 수동으로 올립니다.
       - name: 완료 메일 준비
         id: pack
         if: ${{ inputs.dry_run != true }}
@@ -186,7 +145,7 @@ jobs:
           password: ${{ env.MAIL_PW }}
           from: 카드뉴스 봇 <${{ secrets.MAIL_USERNAME }}>
           to: ${{ secrets.MAIL_TO }}
-          subject: "📸 ${{ steps.pack.outputs.week }}회차 게시 완료 ${{ steps.reel.outcome == 'success' && '(카드뉴스 + 릴스)' || '— ⚠️ 릴스는 직접 올려주세요' }}"
+          subject: "📸 ${{ steps.pack.outputs.week }}회차 게시 완료 — 릴스 영상 보내드립니다"
           body: ${{ env.MAIL_BODY }}
           attachments: >-
             insta-cardnews/output/email/*.mp4,
