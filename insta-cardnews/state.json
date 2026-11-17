@@ -1,5 +1,5 @@
 {
-  "next_index": 11,
+  "next_index": 12,
   "loop": true,
   "token_issued_at": "2026-11-07",
   "history": [
@@ -119,6 +119,15 @@
       "comment_id": "18120619696949505",
       "comment_error": "",
       "posted_at": "2026-11-10T18:10:14+00:00"
+    },
+    {
+      "week": 12,
+      "chapter": "MBTI, 채용의 조건이 되어서는 안 된다",
+      "media_id": "17916578292284597",
+      "permalink": "https://www.instagram.com/p/Df2qwVNozN2/",
+      "comment_id": "18645007633057676",
+      "comment_error": "",
+      "posted_at": "2026-11-17T19:20:50+00:00"
     }
   ],
   "reels_history": [
